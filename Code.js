@@ -5,7 +5,7 @@
 /**
  * 这是插件的“主入口”，当用户打开插件时首先运行。
  * 它的作用是读取当前状态，然后调用UI构建器。
- * @param {Object} e 事件对象.
+ * @param {Object} e 事件对象. 
  * @return {Card}
  */
 function onHomepage(e) {
@@ -30,9 +30,9 @@ function onHomepage(e) {
 
 /**
  * 这是一个“纯粹的”UI构建函数，它根据传入的参数来显示界面。
- * @param {boolean} isRunning 服务是否在运行.
- * @param {string} email 当前设置的邮箱地址.
- * @param {string} frequency 当前设置的频率.
+ * @param {boolean} isRunning 服务是否在运行. 
+ * @param {string} email 当前设置的邮箱地址. 
+ * @param {string} frequency 当前设置的频率. 
  * @return {Card}
  */
 function buildHomepageCard(isRunning, email, frequency) {
@@ -66,13 +66,18 @@ function buildHomepageCard(isRunning, email, frequency) {
     .setText("停止服务")
     .setOnClickAction(CardService.newAction().setFunctionName("handleStopService"));
     
+  const runNowButton = CardService.newTextButton()
+    .setText("立即手动触发一次")
+    .setOnClickAction(CardService.newAction().setFunctionName("handleRunNow"));
+
   const cardSection = CardService.newCardSection()
     .setHeader("状态与设置")
     .addWidget(statusWidget)
     .addWidget(emailInput)
     .addWidget(frequencyDropdown)
     .addWidget(startButton)
-    .addWidget(stopButton);
+    .addWidget(stopButton)
+    .addWidget(runNowButton);
 
   const card = CardService.newCardBuilder()
     .setHeader(CardService.newCardHeader().setTitle("AI简报设置"))
@@ -86,6 +91,26 @@ function buildHomepageCard(isRunning, email, frequency) {
 // =================================================================
 // SECTION 2: USER ACTIONS & TRIGGER MANAGEMENT
 // =================================================================
+
+/**
+ * Handle "Run Now" button click. 
+ */
+function handleRunNow(e) {
+  const userProperties = PropertiesService.getUserProperties();
+  const recipientEmail = userProperties.getProperty('recipientEmail');
+
+  if (!recipientEmail) {
+    return CardService.newActionResponseBuilder()
+      .setNotification(CardService.newNotification().setText("请先设置并启动服务。"))
+      .build();
+  }
+  
+  forwardAllEmails();
+  
+  return CardService.newActionResponseBuilder()
+      .setNotification(CardService.newNotification().setText("手动触发成功！简报已发送至您的邮箱。"))
+      .build();
+}
 
 /**
  * 处理“启动/更新服务”按钮的点击事件

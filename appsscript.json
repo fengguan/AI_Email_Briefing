@@ -3,6 +3,9 @@
   "dependencies": {},
   "exceptionLogging": "STACKDRIVER",
   "runtimeVersion": "V8",
+  "urlFetchWhitelist": [
+    "https://generativelanguage.googleapis.com/"
+  ],
   "oauthScopes": [
     "https://www.googleapis.com/auth/gmail.addons.execute",
     "https://www.googleapis.com/auth/gmail.addons.current.action.compose",
