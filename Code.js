@@ -173,30 +173,41 @@ function handleStopService(e) {
 
 
 /**
- * 辅助函数：删除由本插件管理的所有触发器
+ * 辅助函数：删除由本插件管理的所有触发器，包括旧版本的残留触发器。
  */
 function deleteManagedTriggers() {
   const userProperties = PropertiesService.getUserProperties();
   const briefingTriggerId = userProperties.getProperty('briefingTriggerId');
   const requestTriggerId = userProperties.getProperty('requestTriggerId');
+  const oldTriggerId = userProperties.getProperty('triggerId'); // 检查旧的属性
 
   const allTriggers = ScriptApp.getProjectTriggers();
   let deletedCount = 0;
 
   allTriggers.forEach(trigger => {
     const triggerUid = trigger.getUniqueId();
-    if (triggerUid === briefingTriggerId || triggerUid === requestTriggerId) {
+    const handlerFunction = trigger.getHandlerFunction();
+
+    // 如果触发器的ID匹配我们存储的ID，或者其处理函数是我们的目标函数，则删除
+    if (triggerUid === briefingTriggerId || 
+        triggerUid === requestTriggerId || 
+        triggerUid === oldTriggerId ||
+        handlerFunction === 'forwardAllEmails' ||
+        handlerFunction === 'processEmailRequest') 
+    {
       ScriptApp.deleteTrigger(trigger);
       deletedCount++;
     }
   });
   
   if (deletedCount > 0) {
-    console.log(`删除了 ${deletedCount} 个受管触发器。`);
+    console.log(`删除了 ${deletedCount} 个项目触发器。`);
   }
 
+  // 清理所有可能的触发器属性
   userProperties.deleteProperty('briefingTriggerId');
   userProperties.deleteProperty('requestTriggerId');
+  userProperties.deleteProperty('triggerId'); // 删除旧属性
 }
 
 
