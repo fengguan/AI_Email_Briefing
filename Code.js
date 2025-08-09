@@ -10,7 +10,8 @@
  */
 function onHomepage(e) {
   const userProperties = PropertiesService.getUserProperties();
-  const triggerId = userProperties.getProperty('triggerId');
+  // 我们根据简报触发器的存在来判断“运行中”状态
+  const triggerId = userProperties.getProperty('briefingTriggerId');
   const savedEmail = userProperties.getProperty('recipientEmail') || '';
   const savedFrequency = userProperties.getProperty('frequencyHours') || '12';
   
@@ -19,7 +20,8 @@ function onHomepage(e) {
     const allTriggers = ScriptApp.getProjectTriggers();
     isRunning = allTriggers.some(t => t.getUniqueId() === triggerId);
     if (!isRunning) {
-      userProperties.deleteProperty('triggerId'); // 清理无效ID
+      // 如果主触发器丢失，说明状态异常，清理所有相关触发器
+      deleteManagedTriggers();
     }
   }
   
@@ -38,19 +40,19 @@ function onHomepage(e) {
 function buildHomepageCard(isRunning, email, frequency) {
   let statusMessage = "服务当前状态：已停止。";
   if (isRunning) {
-    statusMessage = `服务运行中，大约每 ${frequency} 小时更新一次，将发送至: ${email}`;
+    statusMessage = `服务运行中，简报大约每 ${frequency} 小时更新一次。邮件提取功能已激活。将发送至: ${email}`;
   }
 
   const statusWidget = CardService.newTextParagraph().setText(statusMessage);
 
   const emailInput = CardService.newTextInput()
     .setFieldName("recipient_email_input")
-    .setTitle("接收简报的邮箱地址")
+    .setTitle("接收简报和邮件的邮箱地址")
     .setValue(email);
 
   const frequencyDropdown = CardService.newSelectionInput()
     .setFieldName("frequency_input")
-    .setTitle("更新频率")
+    .setTitle("简报更新频率")
     .setType(CardService.SelectionInputType.DROPDOWN)
     .addItem("每小时", "1", frequency === "1")
     .addItem("每 3 小时", "3", frequency === "3")
@@ -67,7 +69,7 @@ function buildHomepageCard(isRunning, email, frequency) {
     .setOnClickAction(CardService.newAction().setFunctionName("handleStopService"));
     
   const runNowButton = CardService.newTextButton()
-    .setText("立即手动触发一次")
+    .setText("立即手动触发一次简报")
     .setOnClickAction(CardService.newAction().setFunctionName("handleRunNow"));
 
   const cardSection = CardService.newCardSection()
@@ -80,7 +82,7 @@ function buildHomepageCard(isRunning, email, frequency) {
     .addWidget(runNowButton);
 
   const card = CardService.newCardBuilder()
-    .setHeader(CardService.newCardHeader().setTitle("AI简报设置"))
+    .setHeader(CardService.newCardHeader().setTitle("AI助手设置"))
     .addSection(cardSection)
     .build();
 
@@ -93,7 +95,7 @@ function buildHomepageCard(isRunning, email, frequency) {
 // =================================================================
 
 /**
- * Handle "Run Now" button click. 
+ * Handle "Run Now" button click for briefing. 
  */
 function handleRunNow(e) {
   const userProperties = PropertiesService.getUserProperties();
@@ -121,24 +123,34 @@ function handleStartService(e) {
   const frequencyHours = parseInt(e.formInput.frequency_input, 10);
 
   if (!recipientEmail || !recipientEmail.includes('@')) {
-    // ... (错误处理部分不变)
+    return CardService.newActionResponseBuilder()
+      .setNotification(CardService.newNotification().setText("请输入一个有效的邮箱地址。"))
+      .build();
   }
 
   userProperties.setProperty('recipientEmail', recipientEmail);
   userProperties.setProperty('frequencyHours', String(frequencyHours));
-  deleteUserTriggers();
+  
+  // 删除旧的受管触发器，以便创建新的
+  deleteManagedTriggers();
 
-  const newTrigger = ScriptApp.newTrigger('forwardAllEmails')
+  // 为AI简报创建触发器
+  const briefingTrigger = ScriptApp.newTrigger('forwardAllEmails')
       .timeBased().everyHours(frequencyHours).create();
-      
-  userProperties.setProperty('triggerId', newTrigger.getUniqueId());
+  userProperties.setProperty('briefingTriggerId', briefingTrigger.getUniqueId());
+  console.log(`已创建简报触发器: ${briefingTrigger.getUniqueId()}`);
 
-  // --- 这是修改过的部分：明确地传递“新状态”来更新UI ---
+  // 为邮件正文提取功能创建触发器 (固定每15分钟)
+  const requestTrigger = ScriptApp.newTrigger('processEmailRequest')
+      .timeBased().everyMinutes(15).create();
+  userProperties.setProperty('requestTriggerId', requestTrigger.getUniqueId());
+  console.log(`已创建邮件提取触发器: ${requestTrigger.getUniqueId()}`);
+
   const updatedCard = buildHomepageCard(true, recipientEmail, String(frequencyHours));
 
   return CardService.newActionResponseBuilder()
       .setNavigation(CardService.newNavigation().updateCard(updatedCard))
-      .setNotification(CardService.newNotification().setText("服务已启动！"))
+      .setNotification(CardService.newNotification().setText("服务已启动！简报和邮件提取功能均已激活。"))
       .build();
 }
 
@@ -147,12 +159,11 @@ function handleStartService(e) {
  * 处理“停止服务”按钮的点击事件
  */
 function handleStopService(e) {
-  deleteUserTriggers();
+  deleteManagedTriggers();
   const userProperties = PropertiesService.getUserProperties();
-  userProperties.deleteAllProperties(); // 更彻底地清除所有设置
+  userProperties.deleteAllProperties();
   
-  // --- 这是修改过的部分：明确地传递“已停止”状态来更新UI ---
-  const updatedCard = buildHomepageCard(false, '', '12'); // 传递“已停止”的参数
+  const updatedCard = buildHomepageCard(false, '', '12');
 
   return CardService.newActionResponseBuilder()
       .setNavigation(CardService.newNavigation().updateCard(updatedCard))
@@ -162,58 +173,140 @@ function handleStopService(e) {
 
 
 /**
- * 辅助函数：删除当前用户的所有项目触发器
+ * 辅助函数：删除由本插件管理的所有触发器
  */
-function deleteUserTriggers() {
-  const triggers = ScriptApp.getProjectTriggers();
-  for (const trigger of triggers) {
-    ScriptApp.deleteTrigger(trigger);
+function deleteManagedTriggers() {
+  const userProperties = PropertiesService.getUserProperties();
+  const briefingTriggerId = userProperties.getProperty('briefingTriggerId');
+  const requestTriggerId = userProperties.getProperty('requestTriggerId');
+
+  const allTriggers = ScriptApp.getProjectTriggers();
+  let deletedCount = 0;
+
+  allTriggers.forEach(trigger => {
+    const triggerUid = trigger.getUniqueId();
+    if (triggerUid === briefingTriggerId || triggerUid === requestTriggerId) {
+      ScriptApp.deleteTrigger(trigger);
+      deletedCount++;
+    }
+  });
+  
+  if (deletedCount > 0) {
+    console.log(`删除了 ${deletedCount} 个受管触发器。`);
   }
+
+  userProperties.deleteProperty('briefingTriggerId');
+  userProperties.deleteProperty('requestTriggerId');
 }
 
 
 // =================================================================
 // SECTION 3: CORE LOGIC - EMAIL PROCESSING & AI
-// 这是我们之前写好的核心功能代码，经过改造以适应插件环境
 // =================================================================
 
 /**
- * 主功能函数，由触发器定时调用
+ * 新功能：根据用户邮件请求，提取并发送指定邮件的全文。
  */
-function forwardAllEmails() {
+function processEmailRequest() {
   const userProperties = PropertiesService.getUserProperties();
-  const recipientEmail = userProperties.getProperty('recipientEmail'); // <-- 属性名修改
+  const authorizedEmail = userProperties.getProperty('recipientEmail'); 
 
-  if (!recipientEmail) {
-    console.log("未找到目标邮箱配置，函数执行停止。可能用户已停止服务。");
-    deleteUserTriggers();
+  if (!authorizedEmail) {
+    console.log("未配置授权邮箱，无法处理远程请求。");
     return;
   }
-  
-  // --- 后面的所有代码，都与我们之前的最终版本完全相同 ---
-  // (包括配额检查、摘要、排序、发送邮件等)
-  
-  const quotaLeft = MailApp.getRemainingDailyQuota();
-  console.log(`运行前检查: 当前剩余邮件配额为 ${quotaLeft}。`);
-  if (quotaLeft < 1) {
-    console.warn("邮件配额不足 (剩余: 0)。为避免不必要的API调用和潜在费用，本次运行已自动停止。");
-    return;
-  }
-  
-  const searchQuery = 'is:inbox is:unread'; // 我们不再需要日期限制
+
+  const searchQuery = `is:inbox is:unread from:(${authorizedEmail}) subject:("获取邮件正文:")`;
   const threads = GmailApp.search(searchQuery);
 
   if (threads.length === 0) {
-    console.log("配额充足，但没有发现需要处理的新邮件。");
     return;
   }
 
-  console.log(`配额充足。发现 ${threads.length} 个新的邮件对话，正在进行两步AI处理...`);
+  console.log(`发现 ${threads.length} 个新的邮件提取请求。`);
+
+  threads.forEach(thread => {
+    const message = thread.getMessages()[0];
+    if (message.isUnread()) {
+      const requestSubject = message.getSubject();
+      const targetSubject = requestSubject.replace("获取邮件正文:", "").trim();
+
+      if (targetSubject) {
+        console.log(`正在搜索主题为: "${targetSubject}" 的邮件`);
+        const targetThreads = GmailApp.search(`subject:("${targetSubject}") -from:me`, 0, 1);
+
+        if (targetThreads.length > 0) {
+          const targetMessage = targetThreads[0].getMessages()[0];
+          const originalSubject = targetMessage.getSubject();
+          const originalBody = targetMessage.getBody();
+          const originalSender = targetMessage.getFrom();
+
+          const replySubject = `邮件正文回复: ${originalSubject}`;
+          const replyBody = `
+            <div style="font-family: Arial, sans-serif; padding: 20px;">
+              <p>您好，您请求的邮件全文如下:</p>
+              <div style="border: 1px solid #ccc; border-radius: 8px; margin-top: 15px; padding: 15px; background-color: #f9f9f9;">
+                <p><b>发件人:</b> ${originalSender}</p>
+                <p><b>主题:</b> ${originalSubject}</p>
+                <hr>
+                ${originalBody}
+              </div>
+            </div>
+          `;
+
+          try {
+            MailApp.sendEmail(authorizedEmail, replySubject, "", { htmlBody: replyBody });
+            console.log(`已成功将主题为 "${targetSubject}" 的邮件内容发送至 ${authorizedEmail}`);
+          } catch (e) {
+            console.error(`发送邮件至 ${authorizedEmail} 失败。错误: ${e.toString()}`);
+          }
+
+        } else {
+          console.log(`未能找到主题为 "${targetSubject}" 的邮件。`);
+          try {
+            MailApp.sendEmail(authorizedEmail, `未能找到邮件: ${targetSubject}`, `抱歉，您的收件箱中没有找到主题为 "${targetSubject}" 的邮件。请检查主题是否完全匹配。`);
+          } catch (e) {
+            console.error(`发送“未找到”通知邮件失败。错误: ${e.toString()}`);
+          }
+        }
+      }
+      
+      thread.markRead();
+    }
+  });
+}
+
+
+/**
+ * 主功能函数 (AI简报)，由触发器定时调用
+ */
+function forwardAllEmails() {
+  const userProperties = PropertiesService.getUserProperties();
+  const recipientEmail = userProperties.getProperty('recipientEmail');
+
+  if (!recipientEmail) {
+    console.log("未找到目标邮箱配置，简报功能执行停止。");
+    return;
+  }
+  
+  const quotaLeft = MailApp.getRemainingDailyQuota();
+  if (quotaLeft < 1) {
+    console.warn("邮件配额不足，AI简报功能本次运行已自动停止。");
+    return;
+  }
+  
+  const searchQuery = 'is:inbox is:unread';
+  const threads = GmailApp.search(searchQuery);
+
+  if (threads.length === 0) {
+    return;
+  }
+
+  console.log(`发现 ${threads.length} 个新的邮件对话，正在为简报进行处理...`);
 
   const senderGroups = new Map();
   const processedThreads = [];
 
-  console.log("AI处理第1步：为每封邮件生成摘要和链接...");
   threads.forEach(thread => {
     const messages = thread.getMessages();
     messages.forEach(message => {
@@ -226,16 +319,14 @@ function forwardAllEmails() {
           senderGroups.set(senderEmail, []);
         }
 
-        // --- 新增：获取邮件的唯一链接 ---
         const threadId = message.getThread().getId();
         const messageLink = `https://mail.google.com/mail/u/0/#inbox/${threadId}`;
-        // --- 新增结束 ---
 
         const emailData = {
           date: message.getDate(),
           subject: message.getSubject(),
           summary: getGeminiSummary(message.getPlainBody()),
-          link: messageLink // <-- 将链接存入数据对象
+          link: messageLink
         };
         
         senderGroups.get(senderEmail).push(emailData);
@@ -244,14 +335,18 @@ function forwardAllEmails() {
     processedThreads.push(thread);
   });
 
+  if (Array.from(senderGroups.keys()).length === 0) {
+    console.log("所有未读邮件均为自己发送或已处理，无需生成简报。");
+    processedThreads.forEach(thread => { thread.markRead(); });
+    return;
+  }
+
   senderGroups.forEach(emails => {
     emails.sort((a, b) => a.date - b.date);
   });
   
-  console.log("AI处理第2步：调用AI对发件人进行全局重要性排序...");
   const rankedSenders = getSenderRankingFromGemini(senderGroups);
   
-  console.log("构建最终的智能简报...");
   let emailBlocks = '';
   rankedSenders.forEach(senderEmail => {
     const emails = senderGroups.get(senderEmail);
@@ -260,7 +355,6 @@ function forwardAllEmails() {
     emailBlocks += `<h2 style="padding-bottom: 10px; border-bottom: 2px solid #1A73E8; color: #1A73E8;">发件人: ${senderEmail}</h2>`;
     
     emails.forEach(email => {
-      // --- 新增：在HTML中加入链接按钮 ---
       emailBlocks += `
         <div style="border: 1px solid #ccc; border-radius: 8px; margin-bottom: 20px; padding: 15px; background-color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
            <p style="margin:0 0 10px 0;"><b>主题:</b> ${email.subject}</p>
@@ -272,11 +366,9 @@ function forwardAllEmails() {
              <a href="${email.link}" target="_blank" style="font-size: 12px; font-weight: bold; color: #ffffff; background-color: #4285F4; padding: 5px 12px; border-radius: 4px; text-decoration: none;">在Gmail中打开</a>
            </div>
          </div>`;
-       // --- 新增结束 ---
     });
   });
 
-  // ... (此函数剩余的构建和发送邮件部分，与上一版完全相同) ...
   const summarySubject = `✨ AI 智能简报 - ${new Date().toLocaleString("zh-CN", { timeZone: "America/New_York" })}`;
   const summaryBody = `
     <div style="font-family: Arial, sans-serif; background-color: #f4f4f9; padding: 20px;">
@@ -304,13 +396,11 @@ function forwardAllEmails() {
  * @return {string} The summary from Gemini, or an error message.
  */
 function getGeminiSummary(text) {
-  // 从脚本属性中获取API密钥
   const API_KEY = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
   if (!API_KEY) {
     return "错误：未能找到GEMINI_API_KEY，请检查项目设置中的脚本属性。";
   }
 
-  // 准备API请求
   const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + API_KEY;
   
   const payload = {
@@ -329,7 +419,7 @@ function getGeminiSummary(text) {
     'method': 'post',
     'contentType': 'application/json',
     'payload': JSON.stringify(payload),
-    'muteHttpExceptions': true // 发生错误时不抛出异常，而是返回响应，方便我们处理
+    'muteHttpExceptions': true
   };
 
   try {
@@ -339,7 +429,6 @@ function getGeminiSummary(text) {
 
     if (responseCode === 200) {
       const data = JSON.parse(responseBody);
-      // 安全地访问返回的文本
       return data.candidates[0].content.parts[0].text.trim();
     } else {
       console.error("Gemini API 调用失败。响应码: " + responseCode + " | 响应内容: " + responseBody);
@@ -357,9 +446,7 @@ function getGeminiSummary(text) {
  * @return {Array<string>} A ranked array of sender email addresses.
  */
 function getSenderRankingFromGemini(senderGroups) {
-  // --- 这是修改过的部分：优化了给AI的指令(Prompt) ---
   let promptText = "我有一个邮件摘要列表，按发件人分组。请你扮演我的行政助理，根据每组邮件摘要的内容，判断哪些发件人的信息更紧急或更重要，然后对这些发件人进行排序。你的回答必须包含所有我给出的发件人，一个都不能少。请只返回一个按重要性从高到低排序的、用逗号分隔的发件人邮箱地址列表，不要添加任何其他文字、解释或编号。例如：'boss@example.com,client@example.com,team@example.com'。这是需要你分析的数据：\n\n";
-  // --- 修改结束 ---
 
   senderGroups.forEach((emails, sender) => {
     promptText += `发件人: ${sender}\n`;
