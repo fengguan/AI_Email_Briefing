@@ -140,9 +140,9 @@ function handleStartService(e) {
   userProperties.setProperty('briefingTriggerId', briefingTrigger.getUniqueId());
   console.log(`已创建简报触发器: ${briefingTrigger.getUniqueId()}`);
 
-  // 为邮件正文提取功能创建触发器 (固定每15分钟)
+  // 为邮件正文提取功能创建触发器 (固定每1小时，此为插件最低频率限制)
   const requestTrigger = ScriptApp.newTrigger('processEmailRequest')
-      .timeBased().everyMinutes(15).create();
+      .timeBased().everyHours(1).create();
   userProperties.setProperty('requestTriggerId', requestTrigger.getUniqueId());
   console.log(`已创建邮件提取触发器: ${requestTrigger.getUniqueId()}`);
 
