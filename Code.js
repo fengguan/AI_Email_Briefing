@@ -500,3 +500,16 @@ function getSenderRankingFromGemini(senderGroups) {
     return Array.from(senderGroups.keys());
   }
 }
+
+/**
+ * 紧急修复功能：强制删除此项目的所有触发器。
+ * 请在脚本编辑器中手动选择并运行此函数一次，以清理可能导致问题的任何残留触发器。
+ * 运行后，您可以正常使用插件。
+ */
+function forceDeleteAllTriggers() {
+  const allTriggers = ScriptApp.getProjectTriggers();
+  for (const trigger of allTriggers) {
+    ScriptApp.deleteTrigger(trigger);
+  }
+  console.log(`已成功删除所有 ${allTriggers.length} 个项目触发器。`);
+}
