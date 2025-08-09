@@ -176,38 +176,57 @@ function handleStopService(e) {
  * 辅助函数：删除由本插件管理的所有触发器，包括旧版本的残留触发器。
  */
 function deleteManagedTriggers() {
+  console.log("--- 开始执行 deleteManagedTriggers ---");
   const userProperties = PropertiesService.getUserProperties();
   const briefingTriggerId = userProperties.getProperty('briefingTriggerId');
   const requestTriggerId = userProperties.getProperty('requestTriggerId');
-  const oldTriggerId = userProperties.getProperty('triggerId'); // 检查旧的属性
+  const oldTriggerId = userProperties.getProperty('triggerId');
+
+  console.log(`存储的触发器ID: briefingTriggerId=${briefingTriggerId}, requestTriggerId=${requestTriggerId}, oldTriggerId=${oldTriggerId}`);
 
   const allTriggers = ScriptApp.getProjectTriggers();
+  console.log(`ScriptApp.getProjectTriggers() 找到了 ${allTriggers.length} 个触发器。`);
   let deletedCount = 0;
 
-  allTriggers.forEach(trigger => {
-    const triggerUid = trigger.getUniqueId();
-    const handlerFunction = trigger.getHandlerFunction();
+  if (allTriggers.length > 0) {
+    allTriggers.forEach((trigger, index) => {
+      const triggerUid = trigger.getUniqueId();
+      const handlerFunction = trigger.getHandlerFunction();
+      console.log(`检查第 ${index + 1} 个触发器: ID=${triggerUid}, 函数=${handlerFunction}`);
 
-    // 如果触发器的ID匹配我们存储的ID，或者其处理函数是我们的目标函数，则删除
-    if (triggerUid === briefingTriggerId || 
-        triggerUid === requestTriggerId || 
-        triggerUid === oldTriggerId ||
-        handlerFunction === 'forwardAllEmails' ||
-        handlerFunction === 'processEmailRequest') 
-    {
-      ScriptApp.deleteTrigger(trigger);
-      deletedCount++;
-    }
-  });
+      let shouldDelete = false;
+      if (triggerUid === briefingTriggerId) {
+        console.log(` -> 匹配到 briefingTriggerId，准备删除。`);
+        shouldDelete = true;
+      } else if (triggerUid === requestTriggerId) {
+        console.log(` -> 匹配到 requestTriggerId，准备删除。`);
+        shouldDelete = true;
+      } else if (triggerUid === oldTriggerId) {
+        console.log(` -> 匹配到旧的 triggerId，准备删除。`);
+        shouldDelete = true;
+      } else if (handlerFunction === 'forwardAllEmails' || handlerFunction === 'processEmailRequest') {
+        console.log(` -> 函数名匹配，准备删除。`);
+        shouldDelete = true;
+      } else {
+        console.log(` -> 无匹配，将保留此触发器。`);
+      }
+
+      if (shouldDelete) {
+        ScriptApp.deleteTrigger(trigger);
+        deletedCount++;
+        console.log(`   --> 触发器 ${triggerUid} 已删除。`);
+      }
+    });
+  }
   
   if (deletedCount > 0) {
-    console.log(`删除了 ${deletedCount} 个项目触发器。`);
+    console.log(`总共删除了 ${deletedCount} 个项目触发器。`);
   }
 
-  // 清理所有可能的触发器属性
   userProperties.deleteProperty('briefingTriggerId');
   userProperties.deleteProperty('requestTriggerId');
-  userProperties.deleteProperty('triggerId'); // 删除旧属性
+  userProperties.deleteProperty('triggerId');
+  console.log("--- 结束执行 deleteManagedTriggers ---");
 }
 
 
@@ -499,17 +518,4 @@ function getSenderRankingFromGemini(senderGroups) {
     console.error("AI排序时发生异常: " + e.toString());
     return Array.from(senderGroups.keys());
   }
-}
-
-/**
- * 紧急修复功能：强制删除此项目的所有触发器。
- * 请在脚本编辑器中手动选择并运行此函数一次，以清理可能导致问题的任何残留触发器。
- * 运行后，您可以正常使用插件。
- */
-function forceDeleteAllTriggers() {
-  const allTriggers = ScriptApp.getProjectTriggers();
-  for (const trigger of allTriggers) {
-    ScriptApp.deleteTrigger(trigger);
-  }
-  console.log(`已成功删除所有 ${allTriggers.length} 个项目触发器。`);
 }
