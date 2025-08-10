@@ -17,7 +17,7 @@
   ],
   "addOns": {
     "common": {
-      "name": "AI 邮件智能简报",
+      "name": "AI Email Smart Briefing",
       "logoUrl": "https://i.imgur.com/Z7XGe1f.png",
       "layoutProperties": {
         "primaryColor": "#4285F4",
