@@ -328,6 +328,7 @@ function processEmailRequest() {
 function forwardAllEmails() {
   const userProperties = PropertiesService.getUserProperties();
   const recipientEmail = userProperties.getProperty('recipientEmail');
+  const scriptUserEmail = Session.getActiveUser().getEmail(); // Get the email of the user running the script
 
   if (!recipientEmail) {
     console.log("Recipient email not found, stopping the briefing function.");
@@ -403,7 +404,7 @@ function forwardAllEmails() {
     emails.forEach(email => {
       const requestSubject = `Fetch Email Body: id:${email.threadId}`;
       const encodedSubject = encodeURIComponent(requestSubject);
-      const mailtoLink = `mailto:${recipientEmail}?subject=${encodedSubject}`;
+      const mailtoLink = `mailto:${scriptUserEmail}?subject=${encodedSubject}`;
 
       emailBlocks += `
         <div style="border: 1px solid #ccc; border-radius: 8px; margin-bottom: 20px; padding: 15px; background-color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
