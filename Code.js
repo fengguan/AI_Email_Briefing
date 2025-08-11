@@ -222,6 +222,7 @@ function deleteManagedTriggers() {
 
 /**
  * New feature: Fetches and sends the full content of a specified email based on a user's email request.
+ * Supports fetching by unique Gmail Thread ID or by a general search query.
  */
 function processEmailRequest() {
   const userProperties = PropertiesService.getUserProperties();
@@ -245,14 +246,34 @@ function processEmailRequest() {
     const message = thread.getMessages()[0];
     if (message.isUnread()) {
       const requestSubject = message.getSubject();
-      const targetSubject = requestSubject.replace("Fetch Email Body:", "").trim();
+      const requestContent = requestSubject.replace("Fetch Email Body:", "").trim();
 
-      if (targetSubject) {
-        console.log(`Searching for email with subject: "${targetSubject}"`);
-        const targetThreads = GmailApp.search(`subject:("${targetSubject}") -from:me`, 0, 1);
+      if (requestContent) {
+        let targetThread = null;
 
-        if (targetThreads.length > 0) {
-          const targetMessage = targetThreads[0].getMessages()[0];
+        // Priority 1: Check if the request is for a specific Thread ID
+        if (requestContent.toLowerCase().startsWith("id:")) {
+          const threadId = requestContent.substring(3).trim();
+          console.log(`Fetching email by Thread ID: "${threadId}"`);
+          try {
+            targetThread = GmailApp.getThreadById(threadId);
+          } catch (e) {
+            console.error(`Error fetching thread by ID: ${e.toString()}`);
+            targetThread = null;
+          }
+        } else {
+          // Fallback to general search if not an ID-based request
+          console.log(`Executing custom search query: "${requestContent}"`);
+          const finalQuery = `${requestContent} -from:me`;
+          const targetThreads = GmailApp.search(finalQuery, 0, 1);
+          if (targetThreads.length > 0) {
+            targetThread = targetThreads[0];
+          }
+        }
+
+        if (targetThread) {
+          const messages = targetThread.getMessages();
+          const targetMessage = messages[messages.length - 1]; // Get the last message in the thread
           const originalSubject = targetMessage.getSubject();
           const originalBody = targetMessage.getBody();
           const originalSender = targetMessage.getFrom();
@@ -271,16 +292,16 @@ function processEmailRequest() {
           `;
 
           try {
-            MailApp.sendEmail(authorizedEmail, replySubject, "", {htmlBody: replyBody});
-            console.log(`Successfully sent the content of email with subject "${targetSubject}" to ${authorizedEmail}`);
+            MailApp.sendEmail(authorizedEmail, replySubject, "", { htmlBody: replyBody });
+            console.log(`Successfully sent the content of email from request "${requestContent}" to ${authorizedEmail}`);
           } catch (e) {
             console.error(`Failed to send email to ${authorizedEmail}. Error: ${e.toString()}`);
           }
 
         } else {
-          console.log(`Could not find an email with the subject: "${targetSubject}"`);
+          console.log(`No results found for request: "${requestContent}"`);
           try {
-            MailApp.sendEmail(authorizedEmail, `Could not find email: ${targetSubject}`, `Sorry, an email with the subject "${targetSubject}" was not found in your inbox. Please check if the subject is correct.`);
+            MailApp.sendEmail(authorizedEmail, `Could not find email for request: ${requestContent}`, `Sorry, no email was found in your inbox for the request "${requestContent}". Please try a different query or ID.`);
           } catch (e) {
             console.error(`Failed to send "not found" notification. Error: ${e.toString()}`);
           }
