@@ -151,10 +151,10 @@ function handleStartService(e) {
   console.log(`Created briefing trigger: ${briefingTrigger.getUniqueId()}`);
 
   // Create a trigger for the email fetch feature (fixed at every 1 hour, the minimum frequency for add-ons)
-  const requestTrigger = ScriptApp.newTrigger('processEmailRequest')
-      .timeBased().everyHours(1).create();
-  userProperties.setProperty('requestTriggerId', requestTrigger.getUniqueId());
-  console.log(`Created email fetch trigger: ${requestTrigger.getUniqueId()}`);
+//  const requestTrigger = ScriptApp.newTrigger('processEmailRequest')
+//      .timeBased().everyHours(1).create();
+//  userProperties.setProperty('requestTriggerId', requestTrigger.getUniqueId());
+//  console.log(`Created email fetch trigger: ${requestTrigger.getUniqueId()}`);
 
   const updatedCard = buildHomepageCard(true, recipientEmail, String(frequencyHours));
 

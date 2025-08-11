@@ -7,6 +7,7 @@
     "https://generativelanguage.googleapis.com/"
   ],
   "oauthScopes": [
+    "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/gmail.addons.execute",
     "https://www.googleapis.com/auth/gmail.addons.current.action.compose",
     "https://www.googleapis.com/auth/gmail.readonly",
