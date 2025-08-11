@@ -322,6 +322,9 @@ function processEmailRequest() {
 /**
  * Main function (AI Briefing), called periodically by a trigger.
  */
+/**
+ * Main function (AI Briefing), called periodically by a trigger.
+ */
 function forwardAllEmails() {
   const userProperties = PropertiesService.getUserProperties();
   const recipientEmail = userProperties.getProperty('recipientEmail');
@@ -368,7 +371,8 @@ function forwardAllEmails() {
           date: message.getDate(),
           subject: message.getSubject(),
           summary: getGeminiSummary(message.getPlainBody()),
-          link: messageLink
+          link: messageLink,
+          threadId: threadId // Store threadId for the new button
         };
         
         senderGroups.get(senderEmail).push(emailData);
@@ -397,6 +401,10 @@ function forwardAllEmails() {
     emailBlocks += `<h2 style="padding-bottom: 10px; border-bottom: 2px solid #1A73E8; color: #1A73E8;">From: ${senderEmail}</h2>`;
     
     emails.forEach(email => {
+      const requestSubject = `Fetch Email Body: id:${email.threadId}`;
+      const encodedSubject = encodeURIComponent(requestSubject);
+      const mailtoLink = `mailto:${recipientEmail}?subject=${encodedSubject}`;
+
       emailBlocks += `
         <div style="border: 1px solid #ccc; border-radius: 8px; margin-bottom: 20px; padding: 15px; background-color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
            <p style="margin:0 0 10px 0;"><b>Subject:</b> ${email.subject}</p>
@@ -405,7 +413,10 @@ function forwardAllEmails() {
            </div>
            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
              <p style="margin:0; font-size: 12px; color: #777;">Time: ${email.date.toLocaleString("en-US", { timeZone: "America/New_York" })}</p>
-             <a href="${email.link}" target="_blank" style="font-size: 12px; font-weight: bold; color: #ffffff; background-color: #4285F4; padding: 5px 12px; border-radius: 4px; text-decoration: none;">Open in Gmail</a>
+             <div style="display: flex; gap: 10px;">
+               <a href="${mailtoLink}" target="_blank" style="font-size: 12px; font-weight: bold; color: #ffffff; background-color: #185ABC; padding: 5px 12px; border-radius: 4px; text-decoration: none;">Request Full Body</a>
+               <a href="${email.link}" target="_blank" style="font-size: 12px; font-weight: bold; color: #ffffff; background-color: #4285F4; padding: 5px 12px; border-radius: 4px; text-decoration: none;">Open in Gmail</a>
+             </div>
            </div>
          </div>`;
     });
@@ -422,7 +433,7 @@ function forwardAllEmails() {
   `;
 
   try {
-    MailApp.sendEmail(recipientEmail, summarySubject, "", {htmlBody: summaryBody});
+    MailApp.sendEmail(recipientEmail, summarySubject, "", { htmlBody: summaryBody });
     console.log("AI Smart Briefing sent successfully.");
     processedThreads.forEach(thread => { thread.markRead(); });
     console.log(`${processedThreads.length} email threads have been marked as read.`);
