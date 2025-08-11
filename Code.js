@@ -139,6 +139,11 @@ function handleStartService(e) {
   // Delete old managed triggers to create new ones
   deleteManagedTriggers();
 
+  // Add a 10-second delay to allow the platform to process the deletions
+  console.log("Waiting for 10 seconds before creating new triggers to avoid race conditions...");
+  Utilities.sleep(10000);
+  console.log("Wait finished. Creating new triggers.");
+
   // Create a trigger for the AI briefing
   const briefingTrigger = ScriptApp.newTrigger('forwardAllEmails')
       .timeBased().everyHours(frequencyHours).create();
