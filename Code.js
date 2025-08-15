@@ -283,15 +283,36 @@ function processEmailRequest() {
           const originalBody = targetMessage.getBody();
           const originalSender = targetMessage.getFrom();
 
+          // Extract sender email, create reply links, and build a richer HTML body
+          const originalSenderEmailMatch = originalSender.match(/<(.*)>/);
+          const originalSenderEmail = originalSenderEmailMatch ? originalSenderEmailMatch[1] : originalSender;
+
+          const replyToSubject = `Re: ${originalSubject}`;
+          const encodedReplySubject = encodeURIComponent(replyToSubject);
+          const replyMailtoLink = `mailto:${originalSenderEmail}?subject=${encodedReplySubject}`;
+
+          const threadId = targetThread.getId();
+          const gmailThreadLink = `https://mail.google.com/mail/u/0/#inbox/${threadId}`;
+
           const replySubject = `Email Body Reply: ${originalSubject}`;
           const replyBody = `
-            <div style="font-family: Arial, sans-serif; padding: 20px;">
-              <p>Hello, here is the full content of the email you requested:</p>
-              <div style="border: 1px solid #ccc; border-radius: 8px; margin-top: 15px; padding: 15px; background-color: #f9f9f9;">
-                <p><b>From:</b> ${originalSender}</p>
-                <p><b>Subject:</b> ${originalSubject}</p>
-                <hr>
-                ${originalBody}
+            <div style="font-family: Arial, sans-serif; padding: 20px; background-color: #f4f4f9;">
+              <p style="text-align: center; color: #555;">Hello, here is the full content of the email you requested:</p>
+              <div style="border: 1px solid #ccc; border-radius: 8px; margin-top: 15px; padding: 15px; background-color: #ffffff; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                  <div>
+                    <p style="margin:0;"><b>From:</b> ${originalSender}</p>
+                    <p style="margin:4px 0 0 0;"><b>Subject:</b> ${originalSubject}</p>
+                  </div>
+                  <div style="display: flex; gap: 10px;">
+                    <a href="${replyMailtoLink}" target="_blank" style="font-size: 12px; font-weight: bold; color: #ffffff; background-color: #185ABC; padding: 8px 15px; border-radius: 4px; text-decoration: none;">Reply</a>
+                    <a href="${gmailThreadLink}" target="_blank" style="font-size: 12px; font-weight: bold; color: #ffffff; background-color: #4285F4; padding: 8px 15px; border-radius: 4px; text-decoration: none;">Open in Gmail</a>
+                  </div>
+                </div>
+                <hr style="border:none; border-top: 1px solid #ddd;">
+                <div style="margin-top: 15px;">
+                  ${originalBody}
+                </div>
               </div>
             </div>
           `;
