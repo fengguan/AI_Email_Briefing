@@ -291,31 +291,51 @@ function processEmailRequest() {
 
         if (targetThread) {
           const messages = targetThread.getMessages();
-          const targetMessage = messages[messages.length - 1]; // Get the last message in the thread
-          const originalSubject = targetMessage.getSubject();
-          const originalBody = targetMessage.getBody();
-          const originalSender = targetMessage.getFrom();
+          if (messages.length === 0) {
+            console.log(`Thread ${targetThread.getId()} has no messages. Skipping.`);
+            return; // using return because we are in a forEach loop
+          }
 
-          // Extract sender email for use in the new reply workflow
-          const originalSenderEmailMatch = originalSender.match(/<(.*)>/);
-          const originalSenderEmail = originalSenderEmailMatch ? originalSenderEmailMatch[1] : originalSender;
+          // --- Use the first message for general info, and the last for reply-to ---
+          const firstMessage = messages[0];
+          const lastMessage = messages[messages.length - 1];
+          const originalSubject = firstMessage.getSubject();
+          const firstSender = firstMessage.getFrom();
+          const lastSender = lastMessage.getFrom();
+
+          // Extract sender email for the reply-to workflow from the *last* message
+          const lastSenderEmailMatch = lastSender.match(/<(.*)>/);
+          const lastSenderEmail = lastSenderEmailMatch ? lastSenderEmailMatch[1] : lastSender;
+
+          // --- Build the full thread content ---
+          let fullThreadContent = '';
+          messages.forEach(message => {
+            const sender = message.getFrom();
+            const date = message.getDate().toLocaleString("en-US", { timeZone: "America/New_York" });
+            const body = message.getBody();
+            fullThreadContent += `
+              <div style="border-top: 1px solid #ddd; padding-top: 15px; margin-top: 15px;">
+                <p style="margin:0; color: #666;"><b>From:</b> ${sender}</p>
+                <p style="margin:4px 0 10px 0; color: #666;"><b>Date:</b> ${date}</p>
+                ${body}
+              </div>
+            `;
+          });
+
 
           // --- New Reply Workflow ---
-          // This mailto link is now directed to the user's own email address.
-          // It's pre-filled with data for an external automation script to parse.
-          const scriptUserEmail = Session.getActiveUser().getEmail(); // The user running the script
-          const replyActionSubject = `[REPLY-ACTION] To: ${originalSenderEmail} | Re: ${originalSubject}`;
+          const scriptUserEmail = Session.getActiveUser().getEmail();
+          const replyActionSubject = `[REPLY-ACTION] To: ${lastSenderEmail} | Re: ${originalSubject}`;
           const replyActionBody = `
 ------------------------------------------------------------------
 -- Please write your reply above this line. The text below is for automation --
 ------------------------------------------------------------------
 
-Original-Sender: ${originalSenderEmail}
+Original-Sender: ${lastSenderEmail}
 Original-Subject: Re: ${originalSubject}
 
 `;
 
-          // Encode the subject and body for the mailto link
           const encodedReplyActionSubject = encodeURIComponent(replyActionSubject);
           const encodedReplyActionBody = encodeURIComponent(replyActionBody);
           const replyMailtoLink = `mailto:${scriptUserEmail}?subject=${encodedReplyActionSubject}&body=${encodedReplyActionBody}`;
@@ -323,32 +343,29 @@ Original-Subject: Re: ${originalSubject}
           const threadId = targetThread.getId();
           const gmailThreadLink = `https://mail.google.com/mail/u/0/#inbox/${threadId}`;
 
-          const replySubject = `Email Body Reply: ${originalSubject}`;
+          const replySubject = `Email Thread Body: ${originalSubject}`;
           const replyBody = `
             <div style="font-family: Arial, sans-serif; padding: 20px; background-color: #f4f4f9;">
-              <p style="text-align: center; color: #555;">Hello, here is the full content of the email you requested:</p>
+              <p style="text-align: center; color: #555;">Hello, here is the full content of the email thread you requested:</p>
               <div style="border: 1px solid #ccc; border-radius: 8px; margin-top: 15px; padding: 15px; background-color: #ffffff; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                   <div>
-                    <p style="margin:0;"><b>From:</b> ${originalSender}</p>
+                    <p style="margin:0;"><b>From:</b> ${firstSender}</p>
                     <p style="margin:4px 0 0 0;"><b>Subject:</b> ${originalSubject}</p>
                   </div>
                   <div style="display: flex; gap: 10px;">
-                    <a href="${replyMailtoLink}" target="_blank" style="font-size: 12px; font-weight: bold; color: #ffffff; background-color: #185ABC; padding: 8px 15px; border-radius: 4px; text-decoration: none;">Reply</a>
+                    <a href="${replyMailtoLink}" target="_blank" style="font-size: 12px; font-weight: bold; color: #ffffff; background-color: #185ABC; padding: 8px 15px; border-radius: 4px; text-decoration: none;">Reply to Last</a>
                     <a href="${gmailThreadLink}" target="_blank" style="font-size: 12px; font-weight: bold; color: #ffffff; background-color: #4285F4; padding: 8px 15px; border-radius: 4px; text-decoration: none;">Open in Gmail</a>
                   </div>
                 </div>
-                <hr style="border:none; border-top: 1px solid #ddd;">
-                <div style="margin-top: 15px;">
-                  ${originalBody}
-                </div>
+                ${fullThreadContent}
               </div>
             </div>
           `;
 
           try {
             MailApp.sendEmail(authorizedEmail, replySubject, "", { htmlBody: replyBody });
-            console.log(`Successfully sent the content of email from request "${requestContent}" to ${authorizedEmail}`);
+            console.log(`Successfully sent the content of email thread from request "${requestContent}" to ${authorizedEmail}`);
           } catch (e) {
             console.error(`Failed to send email to ${authorizedEmail}. Error: ${e.toString()}`);
           }
