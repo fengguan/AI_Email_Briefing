@@ -303,6 +303,7 @@ function processEmailRequest() {
           // --- New Reply Workflow ---
           // This mailto link is now directed to the user's own email address.
           // It's pre-filled with data for an external automation script to parse.
+          const scriptUserEmail = Session.getActiveUser().getEmail(); // The user running the script
           const replyActionSubject = `[REPLY-ACTION] To: ${originalSenderEmail} | Re: ${originalSubject}`;
           const replyActionBody = `
 ------------------------------------------------------------------
@@ -317,7 +318,7 @@ Original-Subject: Re: ${originalSubject}
           // Encode the subject and body for the mailto link
           const encodedReplyActionSubject = encodeURIComponent(replyActionSubject);
           const encodedReplyActionBody = encodeURIComponent(replyActionBody);
-          const replyMailtoLink = `mailto:${authorizedEmail}?subject=${encodedReplyActionSubject}&body=${encodedReplyActionBody}`;
+          const replyMailtoLink = `mailto:${scriptUserEmail}?subject=${encodedReplyActionSubject}&body=${encodedReplyActionBody}`;
 
           const threadId = targetThread.getId();
           const gmailThreadLink = `https://mail.google.com/mail/u/0/#inbox/${threadId}`;
