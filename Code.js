@@ -536,9 +536,10 @@ function processReplyAction() {
   console.log(`Found ${threads.length} new reply actions to process.`);
 
   threads.forEach(thread => {
-    const message = thread.getMessages()[0]; // Process the first message in the thread
-    if (message.isUnread()) {
-      const body = message.getPlainBody();
+    const messages = thread.getMessages();
+    const lastMessage = messages[messages.length - 1]; // Process the last message in the thread
+    if (lastMessage.isUnread()) {
+      const body = lastMessage.getPlainBody();
 
       // --- Parse the email body for automation data ---
       const senderMatch = body.match(/Original-Sender:\s*(.*)/);
