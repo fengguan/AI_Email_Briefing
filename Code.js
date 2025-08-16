@@ -150,11 +150,17 @@ function handleStartService(e) {
   userProperties.setProperty('briefingTriggerId', briefingTrigger.getUniqueId());
   console.log(`Created briefing trigger: ${briefingTrigger.getUniqueId()}`);
 
-  // Create a trigger for the email fetch feature (fixed at every 1 hour, the minimum frequency for add-ons)
-//  const requestTrigger = ScriptApp.newTrigger('processEmailRequest')
-//      .timeBased().everyHours(1).create();
-//  userProperties.setProperty('requestTriggerId', requestTrigger.getUniqueId());
-//  console.log(`Created email fetch trigger: ${requestTrigger.getUniqueId()}`);
+  // Create a trigger for the email fetch feature
+  const requestTrigger = ScriptApp.newTrigger('processEmailRequest')
+      .timeBased().everyHours(1).create();
+  userProperties.setProperty('requestTriggerId', requestTrigger.getUniqueId());
+  console.log(`Created email fetch trigger: ${requestTrigger.getUniqueId()}`);
+
+  // Create a trigger for the new reply action feature
+  const replyActionTrigger = ScriptApp.newTrigger('processReplyAction')
+      .timeBased().everyHours(1).create();
+  userProperties.setProperty('replyActionTriggerId', replyActionTrigger.getUniqueId());
+  console.log(`Created reply action trigger: ${replyActionTrigger.getUniqueId()}`);
 
   const updatedCard = buildHomepageCard(true, recipientEmail, String(frequencyHours));
 
@@ -185,10 +191,14 @@ function handleStopService(e) {
 /**
  * Helper function: Deletes all triggers managed by this add-on, including leftovers from previous versions.
  */
+/**
+ * Helper function: Deletes all triggers managed by this add-on, including leftovers from previous versions.
+ */
 function deleteManagedTriggers() {
   const userProperties = PropertiesService.getUserProperties();
   const briefingTriggerId = userProperties.getProperty('briefingTriggerId');
   const requestTriggerId = userProperties.getProperty('requestTriggerId');
+  const replyActionTriggerId = userProperties.getProperty('replyActionTriggerId');
   const oldTriggerId = userProperties.getProperty('triggerId'); // Check for the old property
 
   const allTriggers = ScriptApp.getProjectTriggers();
@@ -201,9 +211,11 @@ function deleteManagedTriggers() {
     // Delete if the trigger's ID matches one of our stored IDs, or if its handler function is one we manage.
     if (triggerUid === briefingTriggerId || 
         triggerUid === requestTriggerId || 
+        triggerUid === replyActionTriggerId ||
         triggerUid === oldTriggerId ||
         handlerFunction === 'forwardAllEmails' ||
-        handlerFunction === 'processEmailRequest') 
+        handlerFunction === 'processEmailRequest' ||
+        handlerFunction === 'processReplyAction')
     {
       ScriptApp.deleteTrigger(trigger);
       deletedCount++;
@@ -217,6 +229,7 @@ function deleteManagedTriggers() {
   // Clean up all possible trigger properties
   userProperties.deleteProperty('briefingTriggerId');
   userProperties.deleteProperty('requestTriggerId');
+  userProperties.deleteProperty('replyActionTriggerId');
   userProperties.deleteProperty('triggerId'); // Delete old property
 }
 
@@ -283,13 +296,29 @@ function processEmailRequest() {
           const originalBody = targetMessage.getBody();
           const originalSender = targetMessage.getFrom();
 
-          // Extract sender email, create reply links, and build a richer HTML body
+          // Extract sender email for use in the new reply workflow
           const originalSenderEmailMatch = originalSender.match(/<(.*)>/);
           const originalSenderEmail = originalSenderEmailMatch ? originalSenderEmailMatch[1] : originalSender;
 
-          const replyToSubject = `Re: ${originalSubject}`;
-          const encodedReplySubject = encodeURIComponent(replyToSubject);
-          const replyMailtoLink = `mailto:${originalSenderEmail}?subject=${encodedReplySubject}`;
+          // --- New Reply Workflow ---
+          // This mailto link is now directed to the user's own email address.
+          // It's pre-filled with data for an external automation script to parse.
+          const scriptUserEmail = Session.getActiveUser().getEmail(); // The user running the script
+          const replyActionSubject = `[REPLY-ACTION] To: ${originalSenderEmail} | Re: ${originalSubject}`;
+          const replyActionBody = `
+------------------------------------------------------------------
+-- Please write your reply above this line. The text below is for automation --
+------------------------------------------------------------------
+
+Original-Sender: ${originalSenderEmail}
+Original-Subject: Re: ${originalSubject}
+
+`;
+
+          // Encode the subject and body for the mailto link
+          const encodedReplyActionSubject = encodeURIComponent(replyActionSubject);
+          const encodedReplyActionBody = encodeURIComponent(replyActionBody);
+          const replyMailtoLink = `mailto:${scriptUserEmail}?subject=${encodedReplyActionSubject}&body=${encodedReplyActionBody}`;
 
           const threadId = targetThread.getId();
           const gmailThreadLink = `https://mail.google.com/mail/u/0/#inbox/${threadId}`;
@@ -462,6 +491,73 @@ function forwardAllEmails() {
   } catch (e) {
     console.error(`Failed to send AI briefing: ${e.toString()}`);
   }
+}
+
+
+/**
+ * Processes emails sent by the user to themselves to trigger a reply to an original sender.
+ */
+function processReplyAction() {
+  const userProperties = PropertiesService.getUserProperties();
+  const authorizedEmail = userProperties.getProperty('recipientEmail');
+
+  if (!authorizedEmail) {
+    console.log("Authorized email not configured, cannot process reply actions.");
+    return;
+  }
+
+  // Search for unread emails with the specific action subject, sent from the user to themselves
+  const searchQuery = `is:inbox is:unread from:(${authorizedEmail}) subject:("[REPLY-ACTION]")`;
+  const threads = GmailApp.search(searchQuery);
+
+  if (threads.length === 0) {
+    return;
+  }
+
+  console.log(`Found ${threads.length} new reply actions to process.`);
+
+  threads.forEach(thread => {
+    const message = thread.getMessages()[0]; // Process the first message in the thread
+    if (message.isUnread()) {
+      const body = message.getPlainBody();
+
+      // --- Parse the email body for automation data ---
+      const senderMatch = body.match(/Original-Sender:\s*(.*)/);
+      const subjectMatch = body.match(/Original-Subject:\s*(.*)/);
+
+      if (!senderMatch || !senderMatch[1] || !subjectMatch || !subjectMatch[1]) {
+        console.error("Could not parse Original-Sender or Original-Subject from email body. Skipping.");
+        thread.markRead(); // Mark as read to avoid retrying a bad format
+        return;
+      }
+
+      const originalSender = senderMatch[1].trim();
+      const originalSubject = subjectMatch[1].trim();
+
+      // Extract the user's reply content (everything above the separator)
+      const separator = "------------------------------------------------------------------";
+      const replyContent = body.split(separator)[0].trim();
+
+      if (!replyContent) {
+        console.warn("Reply content is empty. Skipping sending the email.");
+        thread.markRead();
+        return;
+      }
+
+      // --- Send the email to the original sender ---
+      try {
+        MailApp.sendEmail(originalSender, originalSubject, replyContent);
+        console.log(`Successfully sent reply to ${originalSender} with subject "${originalSubject}"`);
+      } catch (e) {
+        console.error(`Failed to send reply to ${originalSender}. Error: ${e.toString()}`);
+        // Do not mark as read, so it can be retried
+        return;
+      }
+
+      // Mark the action email as read after successful sending
+      thread.markRead();
+    }
+  });
 }
 
 
