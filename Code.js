@@ -261,9 +261,11 @@ function processEmailRequest() {
   console.log(`Found ${threads.length} new email fetch requests.`);
 
   threads.forEach(thread => {
-    const message = thread.getMessages()[0];
-    if (message.isUnread()) {
-      const requestSubject = message.getSubject();
+    const messages = thread.getMessages();
+    const lastMessage = messages[messages.length - 1];
+
+    if (lastMessage.isUnread()) {
+      const requestSubject = lastMessage.getSubject();
       const requestContent = requestSubject.replace("Fetch Email Body:", "").trim();
 
       if (requestContent) {
