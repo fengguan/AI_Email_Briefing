@@ -283,13 +283,28 @@ function processEmailRequest() {
           const originalBody = targetMessage.getBody();
           const originalSender = targetMessage.getFrom();
 
-          // Extract sender email, create reply links, and build a richer HTML body
+          // Extract sender email for use in the new reply workflow
           const originalSenderEmailMatch = originalSender.match(/<(.*)>/);
           const originalSenderEmail = originalSenderEmailMatch ? originalSenderEmailMatch[1] : originalSender;
 
-          const replyToSubject = `Re: ${originalSubject}`;
-          const encodedReplySubject = encodeURIComponent(replyToSubject);
-          const replyMailtoLink = `mailto:${originalSenderEmail}?subject=${encodedReplySubject}`;
+          // --- New Reply Workflow ---
+          // This mailto link is now directed to the user's own email address.
+          // It's pre-filled with data for an external automation script to parse.
+          const replyActionSubject = `[REPLY-ACTION] To: ${originalSenderEmail} | Re: ${originalSubject}`;
+          const replyActionBody = `
+------------------------------------------------------------------
+-- Please write your reply above this line. The text below is for automation --
+------------------------------------------------------------------
+
+Original-Sender: ${originalSenderEmail}
+Original-Subject: Re: ${originalSubject}
+
+`;
+
+          // Encode the subject and body for the mailto link
+          const encodedReplyActionSubject = encodeURIComponent(replyActionSubject);
+          const encodedReplyActionBody = encodeURIComponent(replyActionBody);
+          const replyMailtoLink = `mailto:${authorizedEmail}?subject=${encodedReplyActionSubject}&body=${encodedReplyActionBody}`;
 
           const threadId = targetThread.getId();
           const gmailThreadLink = `https://mail.google.com/mail/u/0/#inbox/${threadId}`;
