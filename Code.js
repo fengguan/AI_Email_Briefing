@@ -592,7 +592,7 @@ function getGeminiSummary(text) {
     return "Error: GEMINI_API_KEY not found. Please check the script properties in the project settings.";
   }
 
-  const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + API_KEY;
+  const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=" + API_KEY;
   
   const payload = {
     "contents": [{
@@ -653,7 +653,7 @@ function getSenderRankingFromGemini(senderGroups) {
     return Array.from(senderGroups.keys());
   }
   
-  const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + API_KEY;
+  const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=" + API_KEY;
   const payload = {
     "contents": [{"parts": [{"text": promptText}]}],
     "generationConfig": { "temperature": 0.1 }
